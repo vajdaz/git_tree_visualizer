@@ -21,6 +21,7 @@ class GitObjectGraphVisualizer:
         self.visited: Set[str] = set()  # track visited objects
         self.object_types: Dict[str, str] = {}  # hash -> type mapping
         self.object_names: Dict[str, str] = {}  # hash -> name mapping
+        self.branches: List[Tuple[str, str, str]] = []  # list of (branch_name, branch_type, commit_hash)
         
     def get_all_git_objects(self) -> List[str]:
         """Get all object hashes known by git."""
@@ -46,6 +47,59 @@ class GitObjectGraphVisualizer:
                 objects.add(parts[0])
         
         return list(objects)
+    
+    def get_all_branches(self) -> None:
+        """
+        Get all local and remote branches and their commit references.
+        Stores results in self.branches as (name, type, commit_hash).
+        """
+        try:
+            # Get local branches
+            result = subprocess.run(
+                ['git', 'branch', '--format=%(refname:short)'],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            for branch_name in result.stdout.strip().split('\n'):
+                if not branch_name:
+                    continue
+                # Get full commit hash for this branch
+                hash_result = subprocess.run(
+                    ['git', 'rev-parse', f'{branch_name}^{{commit}}'],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                commit_hash = hash_result.stdout.strip()
+                if commit_hash:
+                    self.branches.append((branch_name, 'local', commit_hash))
+        except subprocess.CalledProcessError:
+            pass
+        
+        try:
+            # Get remote branches
+            result = subprocess.run(
+                ['git', 'branch', '-r', '--format=%(refname:short)'],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            for branch_name in result.stdout.strip().split('\n'):
+                if not branch_name or ' -> ' in branch_name:
+                    continue
+                # Get full commit hash for this branch
+                hash_result = subprocess.run(
+                    ['git', 'rev-parse', f'{branch_name}^{{commit}}'],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                commit_hash = hash_result.stdout.strip()
+                if commit_hash:
+                    self.branches.append((branch_name, 'remote', commit_hash))
+        except subprocess.CalledProcessError:
+            pass
     
     def get_object_type(self, git_hash: str) -> str:
         """Get the type of a Git object."""
@@ -157,6 +211,25 @@ class GitObjectGraphVisualizer:
         """Create a unique node ID for Graphviz."""
         return f"obj_{git_hash[:8]}"
     
+    def create_branch_node(self, branch_name: str, branch_type: str) -> str:
+        """Create a unique node ID for a branch. Replaces slashes and special chars."""
+        safe_name = re.sub(r'[^a-zA-Z0-9_]', '_', branch_name)
+        return f"branch_{branch_type}_{safe_name}"
+    
+    def process_branches(self) -> None:
+        """
+        Create nodes for branches and edges to their commit objects.
+        """
+        for branch_name, branch_type, commit_hash in self.branches:
+            node_id = self.create_branch_node(branch_name, branch_type)
+            
+            # Create branch node
+            self.nodes[node_id] = ('branch', branch_name, branch_type)
+            
+            # Create edge from branch to its commit
+            commit_node_id = self.create_node_id(commit_hash)
+            self.edges.append((node_id, commit_node_id, branch_type))
+    
     def scan_all_references(self, all_objects: List[str]) -> None:
         """
         First pass: scan all objects to populate object_names from tree and tag references.
@@ -222,11 +295,25 @@ class GitObjectGraphVisualizer:
         ]
         
         # Define node styles by type
+        branch_nodes = [nid for nid, (ntype, _, _) in self.nodes.items() if ntype == 'branch']
         commit_nodes = [nid for nid, (ntype, _, _) in self.nodes.items() if ntype == 'commit']
         tree_nodes = [nid for nid, (ntype, _, _) in self.nodes.items() if ntype == 'tree']
         blob_nodes = [nid for nid, (ntype, _, _) in self.nodes.items() if ntype == 'blob']
         tag_nodes = [nid for nid, (ntype, _, _) in self.nodes.items() if ntype == 'tag']
         
+        if branch_nodes:
+            dot_lines.append('  // Branch nodes')
+            for node_id in branch_nodes:
+                _, label, branch_type = self.nodes[node_id]
+                if branch_type == 'local':
+                    dot_lines.append(
+                        f'  {node_id} [label="{label}", fillcolor="#FFB6C1", shape="ellipse"];'
+                    )
+                else:  # remote
+                    dot_lines.append(
+                        f'  {node_id} [label="{label}", fillcolor="#DDA0DD", shape="ellipse"];'
+                    )
+                
         if commit_nodes:
             dot_lines.append('  // Commit objects')
             for node_id in commit_nodes:
@@ -276,6 +363,14 @@ class GitObjectGraphVisualizer:
                     dot_lines.append(
                         f'  {from_id} -> {to_id} [label="{rel_type}", color="purple"];'
                     )
+                elif rel_type == 'local':
+                    dot_lines.append(
+                        f'  {from_id} -> {to_id} [label="local", color="orange"];'
+                    )
+                elif rel_type == 'remote':
+                    dot_lines.append(
+                        f'  {from_id} -> {to_id} [label="remote", color="brown"];'
+                    )
                 else:
                     dot_lines.append(f'  {from_id} -> {to_id} [label="{rel_type}"];')
         
@@ -297,6 +392,10 @@ class GitObjectGraphVisualizer:
         
         print(f"Found {len(all_objects)} git objects", file=sys.stderr)
         
+        # Get all branches
+        print("Scanning git branches...", file=sys.stderr)
+        self.get_all_branches()
+        
         # First pass: scan all tree objects to discover names
         self.scan_all_references(all_objects)
         
@@ -306,6 +405,10 @@ class GitObjectGraphVisualizer:
             if i % 100 == 0:
                 print(f"  Processed {i}/{len(all_objects)} objects...", file=sys.stderr)
             self.process_object(obj_hash)
+        
+        # Process branches
+        print("Adding branches to graph...", file=sys.stderr)
+        self.process_branches()
         
         print(f"Graph contains {len(self.nodes)} nodes and {len(self.edges)} edges",
               file=sys.stderr)
