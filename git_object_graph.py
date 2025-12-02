@@ -127,6 +127,7 @@ class GitObjectGraphVisualizer:
     def parse_tag(self, git_hash: str) -> List[Tuple[str, str]]:
         """
         Parse tag object and extract object reference.
+        Also stores the tag name if available.
         Returns list of tuples: (ref_type, ref_hash)
         """
         try:
@@ -144,7 +145,11 @@ class GitObjectGraphVisualizer:
             if line.startswith('object '):
                 obj_hash = line.split()[1]
                 refs.append(('object', obj_hash))
-                break
+            elif line.startswith('tag '):
+                tag_name = line.split(' ', 1)[1]
+                # Store the tag name for this tag object
+                if git_hash not in self.object_names:
+                    self.object_names[git_hash] = tag_name
         
         return refs
     
@@ -154,7 +159,7 @@ class GitObjectGraphVisualizer:
     
     def scan_all_references(self, all_objects: List[str]) -> None:
         """
-        First pass: scan all objects to populate object_names from tree references.
+        First pass: scan all objects to populate object_names from tree and tag references.
         This ensures names are discovered before processing individual objects.
         """
         print("Scanning object references to discover names...", file=sys.stderr)
@@ -166,6 +171,9 @@ class GitObjectGraphVisualizer:
             if obj_type == 'tree':
                 # Parse tree to extract child names
                 self.parse_tree(obj_hash)
+            elif obj_type == 'tag':
+                # Parse tag to extract tag name
+                self.parse_tag(obj_hash)
     
     def process_object(self, git_hash: str) -> None:
         """Process a single Git object and extract its references."""
