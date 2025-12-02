@@ -271,12 +271,19 @@ class GitObjectGraphVisualizer:
             if branch_type == 'head':
                 node_id = self.create_branch_node(branch_name, branch_type)
                 self.nodes[node_id] = ('branch', branch_name, branch_type)
-                
+
                 # Handle HEAD specially - it may point to a branch or a commit
                 if commit_hash_or_ref.startswith('branch:'):
                     # HEAD points to a branch
                     target_branch = commit_hash_or_ref.split(':', 1)[1]
                     target_node_id = self.create_branch_node(target_branch, 'local')
+
+                    # If the branch does not actually exist in the graph (no ref yet),
+                    # create a dashed "missing" dummy node to represent it.
+                    if target_node_id not in self.nodes:
+                        # Mark missing local branch so we can style it differently
+                        self.nodes[target_node_id] = ('branch', target_branch, 'local_missing')
+
                     self.edges.append((node_id, target_node_id, 'head'))
                 elif commit_hash_or_ref.startswith('commit:'):
                     # HEAD is detached, pointing to a commit
@@ -371,6 +378,11 @@ class GitObjectGraphVisualizer:
                     dot_lines.append(
                         f'  {node_id} [label="{label}", fillcolor="#FF6347", shape="ellipse", penwidth="3"];'
                     )
+                elif branch_type == 'local_missing':
+                    # Visualize missing (non-existent) local branch with dashed outline
+                    dot_lines.append(
+                        f'  {node_id} [label="{label}", fillcolor="#FFEFD5", shape="ellipse", style="dashed,filled"];'
+                    )
                 
         if commit_nodes:
             dot_lines.append('  // Commit objects')
@@ -428,6 +440,10 @@ class GitObjectGraphVisualizer:
                 elif rel_type == 'remote':
                     dot_lines.append(
                         f'  {from_id} -> {to_id} [label="remote", color="brown"];'
+                    )
+                elif rel_type == 'local_missing':
+                    dot_lines.append(
+                        f'  {from_id} -> {to_id} [label="local (missing)", color="orange", style="dashed"];'
                     )
                 elif rel_type == 'head':
                     dot_lines.append(
