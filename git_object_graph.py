@@ -379,20 +379,20 @@ class GitObjectGraphVisualizer:
                 _, label, branch_type = self.nodes[node_id]
                 if branch_type == 'local':
                     dot_lines.append(
-                        f'  {node_id} [label="{label}", fillcolor="#FFB6C1", shape="ellipse"];'
+                        f'  {node_id} [label="{label}", fillcolor="#FFB6C1", shape="cds"];'
                     )
                 elif branch_type == 'remote':
                     dot_lines.append(
-                        f'  {node_id} [label="{label}", fillcolor="#DDA0DD", shape="ellipse"];'
+                        f'  {node_id} [label="{label}", fillcolor="#DDA0DD", shape="cds"];'
                     )
                 elif branch_type == 'head':
                     dot_lines.append(
-                        f'  {node_id} [label="{label}", fillcolor="#FF6347", shape="ellipse", penwidth="3"];'
+                        f'  {node_id} [label="{label}", fillcolor="#FF6347", shape="cds", penwidth="3"];'
                     )
                 elif branch_type == 'local_missing':
                     # Visualize missing (non-existent) local branch with dashed outline
                     dot_lines.append(
-                        f'  {node_id} [label="{label}", fillcolor="#FFEFD5", shape="ellipse", style="dashed,filled"];'
+                        f'  {node_id} [label="{label}", fillcolor="#FFEFD5", shape="cds", style="dashed,filled"];'
                     )
                 
         if commit_nodes:
@@ -400,7 +400,7 @@ class GitObjectGraphVisualizer:
             for node_id in commit_nodes:
                 _, label, _ = self.nodes[node_id]
                 dot_lines.append(
-                    f'  {node_id} [label="{label}", fillcolor="#FFD700", shape="box"];'
+                    f'  {node_id} [label="{label}", fillcolor="#FFD700", shape="ellipse"];'
                 )
         
         if tree_nodes:
@@ -434,15 +434,15 @@ class GitObjectGraphVisualizer:
             for from_id, to_id, rel_type in self.edges:
                 if rel_type == 'parent':
                     dot_lines.append(
-                        f'  {from_id} -> {to_id} [label="{rel_type}", color="red"];'
+                        f'  {from_id} -> {to_id} [color="red"];'
                     )
                 elif rel_type == 'tree':
                     dot_lines.append(
-                        f'  {from_id} -> {to_id} [label="{rel_type}", color="green"];'
+                        f'  {from_id} -> {to_id} [color="green"];'
                     )
                 elif rel_type == 'object':
                     dot_lines.append(
-                        f'  {from_id} -> {to_id} [label="{rel_type}", color="purple"];'
+                        f'  {from_id} -> {to_id} [color="purple"];'
                     )
                 elif rel_type == 'local':
                     dot_lines.append(
@@ -458,10 +458,10 @@ class GitObjectGraphVisualizer:
                     )
                 elif rel_type == 'head':
                     dot_lines.append(
-                        f'  {from_id} -> {to_id} [label="head", color="red", penwidth="2"];'
+                        f'  {from_id} -> {to_id} [color="red", penwidth="2"];'
                     )
                 else:
-                    dot_lines.append(f'  {from_id} -> {to_id} [label="{rel_type}"];')
+                    dot_lines.append(f'  {from_id} -> {to_id};')
         
         dot_lines.append('}')
         return '\n'.join(dot_lines)
