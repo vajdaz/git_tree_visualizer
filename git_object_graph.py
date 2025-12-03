@@ -522,7 +522,7 @@ class GitObjectGraphVisualizer:
             for node_id in tag_ref_nodes:
                 _, label, _ = self.nodes[node_id]
                 dot_lines.append(
-                    f'  {node_id} [label="{label}", fillcolor="#FFD966", shape="cds"];'
+                    f'  {node_id} [label="{label}", fillcolor="#FF69B4", shape="cds"];'
                 )
         
         if tag_nodes:
@@ -530,7 +530,7 @@ class GitObjectGraphVisualizer:
             for node_id in tag_nodes:
                 _, label, _ = self.nodes[node_id]
                 dot_lines.append(
-                    f'  {node_id} [label="{label}", fillcolor="#FF69B4", shape="diamond"];'
+                    f'  {node_id} [label="{label}", fillcolor="#FF69B4", shape="note"];'
                 )
         
         if commit_nodes:
@@ -556,7 +556,7 @@ class GitObjectGraphVisualizer:
             for node_id in blob_nodes:
                 _, label, _ = self.nodes[node_id]
                 dot_lines.append(
-                    f'  {node_id} [label="{label}", fillcolor="#87CEEB", shape="note"];'
+                    f'  {node_id} [label="{label}", fillcolor="#87CEEB", shape="cylinder"];'
                 )
             # Rank blobs at the same level
             dot_lines.append(f'  {{rank=same; {" ".join(blob_nodes)}}}')
@@ -590,7 +590,7 @@ class GitObjectGraphVisualizer:
                         )
                 elif rel_type == 'object':
                     dot_lines.append(
-                        f'  {from_id} -> {to_id} [color="purple"];'
+                        f'  {from_id} -> {to_id} [label="tag (obj)", color="purple"];'
                     )
                 elif rel_type == 'local':
                     dot_lines.append(
@@ -614,7 +614,7 @@ class GitObjectGraphVisualizer:
                     )
                 elif rel_type == 'tag_ref':
                     dot_lines.append(
-                        f'  {from_id} -> {to_id} [label="tag", color="goldenrod"];'
+                        f'  {from_id} -> {to_id} [label="tag (ref)", color="purple"];'
                     )
                 else:
                     dot_lines.append(f'  {from_id} -> {to_id};')
