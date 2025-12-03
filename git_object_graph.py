@@ -22,6 +22,7 @@ class GitObjectGraphVisualizer:
         self.object_types: Dict[str, str] = {}  # hash -> type mapping
         self.object_names: Dict[str, str] = {}  # hash -> name mapping
         self.branches: List[Tuple[str, str, str]] = []  # list of (branch_name, branch_type, commit_hash)
+        self.upstreams: Dict[str, str] = {}  # local_branch -> upstream (remote) branch name
         
     def get_all_git_objects(self) -> List[str]:
         """Get all object hashes known by git."""
@@ -78,6 +79,28 @@ class GitObjectGraphVisualizer:
                 commit_hash = hash_result.stdout.strip()
                 if commit_hash:
                     self.branches.append((branch_name, 'local', commit_hash))
+        except subprocess.CalledProcessError:
+            pass
+
+        # Try to discover upstream (tracking) relationships for local branches
+        try:
+            result = subprocess.run(
+                ['git', 'for-each-ref', '--format=%(refname:short) %(upstream:short)', 'refs/heads'],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                check=True
+            )
+            for line in result.stdout.strip().split('\n'):
+                if not line:
+                    continue
+                parts = line.split()
+                # Format: "local_branch upstream_branch" (upstream may be absent)
+                if len(parts) >= 2:
+                    local = parts[0]
+                    upstream = parts[1]
+                    if upstream:
+                        self.upstreams[local] = upstream
         except subprocess.CalledProcessError:
             pass
         
@@ -301,6 +324,24 @@ class GitObjectGraphVisualizer:
                     commit_hash = commit_hash_or_ref.split(':', 1)[1]
                     commit_node_id = self.create_node_id(commit_hash)
                     self.edges.append((node_id, commit_node_id, 'head'))
+
+        # Add tracking edges for local branches that have an upstream configured.
+        # Prefer linking to a remote branch node if present, otherwise link to any matching branch node.
+        for local_branch, upstream in self.upstreams.items():
+            local_node_id = self.create_branch_node(local_branch, 'local')
+            # Prefer remote upstream node id
+            upstream_remote_id = self.create_branch_node(upstream, 'remote')
+            upstream_local_id = self.create_branch_node(upstream, 'local')
+
+            target_node_id = None
+            if upstream_remote_id in self.nodes:
+                target_node_id = upstream_remote_id
+            elif upstream_local_id in self.nodes:
+                target_node_id = upstream_local_id
+
+            if target_node_id and local_node_id in self.nodes:
+                # Dashed arrow to indicate tracking relationship
+                self.edges.append((local_node_id, target_node_id, 'tracks'))
     
     def scan_all_references(self, all_objects: List[str]) -> None:
         """
@@ -459,6 +500,10 @@ class GitObjectGraphVisualizer:
                 elif rel_type == 'head':
                     dot_lines.append(
                         f'  {from_id} -> {to_id} [color="red", penwidth="2"];'
+                    )
+                elif rel_type == 'tracks':
+                    dot_lines.append(
+                        f'  {from_id} -> {to_id} [label="tracks", style="dashed", color="black"];'
                     )
                 else:
                     dot_lines.append(f'  {from_id} -> {to_id};')
