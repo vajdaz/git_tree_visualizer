@@ -17,7 +17,7 @@ class GitObjectGraphVisualizer:
     def __init__(self):
         """Initialize the visualizer."""
         self.nodes: Dict[str, Tuple[str, str, str]] = {}  # node_id -> (type, label, name)
-        self.edges: List[Tuple[str, str, str]] = []  # list of (from, to, label) tuples
+        self.edges: List[Tuple] = []  # list of (from, to, rel_type, name_label) or (from, to, rel_type) tuples
         self.visited: Set[str] = set()  # track visited objects
         self.object_types: Dict[str, str] = {}  # hash -> type mapping
         self.object_names: Dict[str, str] = {}  # hash -> name mapping
@@ -212,10 +212,10 @@ class GitObjectGraphVisualizer:
         
         return refs
     
-    def parse_tree(self, git_hash: str) -> List[Tuple[str, str]]:
+    def parse_tree(self, git_hash: str) -> List[Tuple[str, str, str]]:
         """
         Parse tree object and extract blob/tree references.
-        Returns list of tuples: (ref_type, ref_hash)
+        Returns list of tuples: (ref_type, ref_hash, name)
         Also stores names for child objects.
         """
         try:
@@ -242,9 +242,9 @@ class GitObjectGraphVisualizer:
                 # Store the name for this object
                 if ref_hash not in self.object_names:
                     self.object_names[ref_hash] = name
-                refs.append((ref_type, ref_hash))
+                refs.append((ref_type, ref_hash, name))
         
-        return refs
+        return refs  # type: ignore
     
     def parse_tag(self, git_hash: str) -> List[Tuple[str, str]]:
         """
@@ -298,7 +298,7 @@ class GitObjectGraphVisualizer:
                 self.nodes[node_id] = ('branch', branch_name, branch_type)
                 
                 commit_node_id = self.create_node_id(commit_hash_or_ref)
-                self.edges.append((node_id, commit_node_id, branch_type))
+                self.edges.append((node_id, commit_node_id, branch_type, ""))
         
         # Then handle HEAD separately
         for branch_name, branch_type, commit_hash_or_ref in self.branches:
@@ -318,12 +318,12 @@ class GitObjectGraphVisualizer:
                         # Mark missing local branch so we can style it differently
                         self.nodes[target_node_id] = ('branch', target_branch, 'local_missing')
 
-                    self.edges.append((node_id, target_node_id, 'head'))
+                    self.edges.append((node_id, target_node_id, 'head', ""))
                 elif commit_hash_or_ref.startswith('commit:'):
                     # HEAD is detached, pointing to a commit
                     commit_hash = commit_hash_or_ref.split(':', 1)[1]
                     commit_node_id = self.create_node_id(commit_hash)
-                    self.edges.append((node_id, commit_node_id, 'head'))
+                    self.edges.append((node_id, commit_node_id, 'head', ""))
 
         # Add tracking edges for local branches that have an upstream configured.
         # Prefer linking to a remote branch node if present, otherwise link to any matching branch node.
@@ -346,7 +346,7 @@ class GitObjectGraphVisualizer:
                     target_node_id = upstream_remote_id
 
                 # Dashed arrow to indicate tracking relationship
-                self.edges.append((local_node_id, target_node_id, 'tracks'))
+                self.edges.append((local_node_id, target_node_id, 'tracks', ""))
     
     def scan_all_references(self, all_objects: List[str]) -> None:
         """
@@ -376,9 +376,13 @@ class GitObjectGraphVisualizer:
         obj_type = self.get_object_type(git_hash)
         node_id = self.create_node_id(git_hash)
         
-        # Get name if available (should be populated from first pass)
+        # Get name if available; for blobs and trees, names will be in edge labels instead
         name = self.object_names.get(git_hash, "")
-        label = f"{git_hash[:8]}\n{name}" if name else git_hash[:8]
+        # Only show name in node label for non-blob and non-tree objects
+        if obj_type in ('blob', 'tree'):
+            label = git_hash[:8]
+        else:
+            label = f"{git_hash[:8]}\n{name}" if name else git_hash[:8]
         
         # Create node with shortened hash and optional name as label
         self.nodes[node_id] = (obj_type, label, name)
@@ -393,9 +397,23 @@ class GitObjectGraphVisualizer:
             refs = self.parse_tag(git_hash)
         
         # Process references and create edges
-        for ref_type, ref_hash in refs:
+        for ref_data in refs:
+            if obj_type == 'tree' and len(ref_data) == 3:
+                # Tree references include name: (ref_type, ref_hash, name)
+                # Note: ref_type here is the child's type (blob, tree), but the edge relationship is 'tree'
+                ref_type, ref_hash, edge_label = ref_data
+                edge_rel_type = 'tree'
+            else:
+                # Other references: (ref_type, ref_hash)
+                if len(ref_data) >= 2:
+                    ref_type, ref_hash = ref_data[0], ref_data[1]
+                else:
+                    continue
+                edge_label = ""
+                edge_rel_type = ref_type
+            
             ref_node_id = self.create_node_id(ref_hash)
-            self.edges.append((node_id, ref_node_id, ref_type))
+            self.edges.append((node_id, ref_node_id, edge_rel_type, edge_label))
             # Recursively process referenced objects
             self.process_object(ref_hash)
     
@@ -482,15 +500,28 @@ class GitObjectGraphVisualizer:
         if self.edges:
             dot_lines.append('')
             dot_lines.append('  // Relationships')
-            for from_id, to_id, rel_type in self.edges:
+            for edge_data in self.edges:
+                # Handle both old 3-tuple and new 4-tuple edge formats
+                if len(edge_data) == 4:
+                    from_id, to_id, rel_type, edge_label = edge_data
+                else:
+                    from_id, to_id, rel_type = edge_data
+                    edge_label = ""
+                
                 if rel_type == 'parent':
                     dot_lines.append(
                         f'  {from_id} -> {to_id} [label="parent", color="red"];'
                     )
                 elif rel_type == 'tree':
-                    dot_lines.append(
-                        f'  {from_id} -> {to_id} [color="green"];'
-                    )
+                    # For tree edges, include the blob/tree name if provided
+                    if edge_label:
+                        dot_lines.append(
+                            f'  {from_id} -> {to_id} [label="{edge_label}", color="green"];'
+                        )
+                    else:
+                        dot_lines.append(
+                            f'  {from_id} -> {to_id} [color="green"];'
+                        )
                 elif rel_type == 'object':
                     dot_lines.append(
                         f'  {from_id} -> {to_id} [color="purple"];'
