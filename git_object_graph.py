@@ -339,7 +339,12 @@ class GitObjectGraphVisualizer:
             elif upstream_local_id in self.nodes:
                 target_node_id = upstream_local_id
 
-            if target_node_id and local_node_id in self.nodes:
+            if local_node_id in self.nodes:
+                if not target_node_id:
+                    # Upstream is not present as a real branch node; create a dashed 'remote_missing' node
+                    self.nodes[upstream_remote_id] = ('branch', upstream, 'remote_missing')
+                    target_node_id = upstream_remote_id
+
                 # Dashed arrow to indicate tracking relationship
                 self.edges.append((local_node_id, target_node_id, 'tracks'))
     
@@ -435,6 +440,11 @@ class GitObjectGraphVisualizer:
                     dot_lines.append(
                         f'  {node_id} [label="{label}", fillcolor="#FFEFD5", shape="cds", style="dashed,filled"];'
                     )
+                elif branch_type == 'remote_missing':
+                    # Visualize missing remote branch with dashed outline (different tint)
+                    dot_lines.append(
+                        f'  {node_id} [label="{label}", fillcolor="#FFF0F5", shape="cds", style="dashed,filled"];'
+                    )
                 
         if commit_nodes:
             dot_lines.append('  // Commit objects')
@@ -475,7 +485,7 @@ class GitObjectGraphVisualizer:
             for from_id, to_id, rel_type in self.edges:
                 if rel_type == 'parent':
                     dot_lines.append(
-                        f'  {from_id} -> {to_id} [color="red"];'
+                        f'  {from_id} -> {to_id} [label="parent", color="red"];'
                     )
                 elif rel_type == 'tree':
                     dot_lines.append(
